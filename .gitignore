@@ -1,0 +1,32 @@
+# Installed packages and build output (recreated by `npm install` and `npm run build`).
+node_modules/
+www/
+build/
+*.ipa
+
+# Native projects are generated fresh by Capacitor / Codemagic on every build.
+ios/
+android/
+
+# Logs and scratch files.
+npm-debug.log*
+*.log
+*.tmp
+*.bak
+*~
+scratch/
+
+# Local settings and secrets (never commit signing keys or API keys).
+.env
+.env.*
+*.p8
+*.p12
+*.mobileprovision
+.claude/
+.vscode/
+.idea/
+
+# OS junk.
+.DS_Store
+Thumbs.db
+desktop.ini

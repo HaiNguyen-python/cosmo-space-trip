@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0d2c">
+<title>Cosmo's Space Trip</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage" data-scene="title">
+  <canvas id="game"></canvas>
+
+  <!-- Title -->
+  <div id="title">
+    <h1 class="logo"><span>Cosmo's</span>Space Trip<i class="spark s1">✦</i><i class="spark s2">✦</i><i class="spark s3">✦</i></h1>
+    <p class="tagline">Explore the planets with your alien friend!</p>
+    <button id="btnPlay" class="btn primary big">🚀 Play</button>
+    <p id="titleProgress" class="title-progress" hidden></p>
+  </div>
+
+  <!-- Map HUD -->
+  <div id="hud">
+    <div class="chip"><span>⭐</span><b id="starCount">0</b></div>
+    <button id="btnAlbum" class="chip-btn" aria-label="Space album">📒 <b id="albumCount">0/9</b></button>
+    <button id="btnBase" class="round-btn" aria-label="Cosmo's space base">🏠</button>
+    <button id="btnPlayground" class="round-btn" aria-label="Space playground">🪐</button>
+    <button id="btnJournal" class="round-btn" aria-label="Space journal">📔</button>
+    <button id="btnWardrobe" class="round-btn" aria-label="Cosmo's wardrobe">🎩</button>
+    <button id="btnStage" class="round-btn" aria-label="Cosmo's stage: quiz show, Space Camp, songs and jokes">🎤</button>
+    <button id="btnSettings" class="round-btn" aria-label="Settings">⚙️</button>
+  </div>
+
+  <!-- Mission HUD -->
+  <div id="gameHud">
+    <button id="btnBack" class="chip-btn">🗺️ Map</button>
+    <div id="gameInfo" class="chip"></div>
+  </div>
+
+  <!-- Space Base HUD and sticker tray -->
+  <div id="baseHud">
+    <button id="btnBaseBack" class="chip-btn">🗺️ Map</button>
+    <div class="base-right">
+      <button id="btnEmote" class="round-btn" aria-label="Make Cosmo dance">💃</button>
+      <button id="btnSky" class="round-btn" aria-label="Night sky telescope">🔭</button>
+      <button id="btnWorkshop" class="round-btn" aria-label="Rocket workshop">🔧</button>
+      <button id="btnGarden" class="round-btn" aria-label="Greenhouse">🌱</button>
+      <button id="btnCritters" class="chip-btn" aria-label="Critter Club">🐾 <b id="critterCount">0/12</b></button>
+      <button id="btnStickers" class="chip-btn">✨ Stickers</button>
+    </div>
+  </div>
+  <div id="emoteBar" hidden></div>
+
+  <!-- Night Sky HUD (telescope at the Space Base) -->
+  <div id="skyHud">
+    <button id="btnSkyBack" class="chip-btn">🏠 Base</button>
+    <div id="skyPick"></div>
+    <div class="chip" aria-label="Constellations found"><span>✨</span><b id="skyCount">0/6</b></div>
+  </div>
+  <!-- Toy HUD: Rocket Workshop and Space Playground (no stars, nothing to lose) -->
+  <div id="toyHud">
+    <button id="btnToyBack" class="chip-btn">🏠 Base</button>
+    <div id="toyPick"></div>
+    <div id="toyInfo" class="chip"></div>
+  </div>
+  <div id="tray" hidden>
+    <div class="tray-head"><b>✨ Stickers</b><small>Tap one to add it. Drag to move. Tap a sticker to change its size.</small><button id="trayClose" class="mini" aria-label="Close stickers">✖</button></div>
+    <div id="trayRow" class="tray-row"></div>
+  </div>
+
+  <!-- Cosmo talking -->
+  <div id="cosmoTalk" hidden>
+    <canvas id="cosmoAvatar" width="220" height="220"></canvas>
+    <div id="talkBubble" class="bubble">
+      <p id="talkText"></p>
+      <div class="bubble-actions">
+        <button id="btnHear" class="mini" aria-label="Read aloud">🔊</button>
+        <button id="btnNext" class="btn primary small">Next ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="banner" hidden></div>
+  <div id="toast"></div>
+  <div id="overlay" hidden><div id="panel" class="panel"></div></div>
+  <!-- Confetti layer: above panels, so quiz and card celebrations are not hidden behind them. -->
+  <canvas id="fx"></canvas>
+  <div id="fade"></div>
+  <div id="rotate"><div>📱↻</div><p>Turn your device sideways to play!</p></div>
+</div>
+
+<script src="src/util.js"></script>
+<script src="src/data.js"></script>
+<script src="src/state.js"></script>
+<script src="src/native.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/draw.js"></script>
+<script src="src/expert.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/title.js"></script>
+<script src="src/map.js"></script>
+<script src="src/flight.js"></script>
+<script src="src/earth.js"></script>
+<script src="src/mars.js"></script>
+<script src="src/jupiter.js"></script>
+<script src="src/saturn.js"></script>
+<script src="src/venus.js"></script>
+<script src="src/mercury.js"></script>
+<script src="src/uranus.js"></script>
+<script src="src/neptune.js"></script>
+<script src="src/moon.js"></script>
+<script src="src/belt.js"></script>
+<script src="src/sun.js"></script>
+<script src="src/comet.js"></script>
+<script src="src/sky.js"></script>
+<script src="src/iss.js"></script>
+<script src="src/workshop.js"></script>
+<script src="src/playground.js"></script>
+<script src="src/europa.js"></script>
+<script src="src/galaxy.js"></script>
+<script src="src/garden.js"></script>
+<script src="src/titan.js"></script>
+<script src="src/sky-today.js"></script>
+<script src="src/journal.js"></script>
+<script src="src/story.js"></script>
+<script src="src/quizshow.js"></script>
+<script src="src/song.js"></script>
+<script src="src/marsbase.js"></script>
+<script src="src/camp.js"></script>
+<script src="src/base.js"></script>
+<script src="src/critters.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>

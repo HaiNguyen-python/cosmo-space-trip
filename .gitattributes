@@ -1,0 +1,8 @@
+# Let git normalise line endings for text files.
+* text=auto
+# Shell scripts run on macOS and must keep Unix line endings.
+*.sh text eol=lf
+*.yaml text eol=lf
+# Images are binary.
+*.png binary
+*.jpg binary

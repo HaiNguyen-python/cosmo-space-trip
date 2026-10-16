@@ -1,0 +1,20 @@
+{
+  "appId": "com.hainguyen.cosmospacetrip",
+  "appName": "Cosmo's Space Trip",
+  "webDir": "www",
+  "backgroundColor": "#0a0d2c",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "backgroundColor": "#0a0d2c",
+    "preferredContentMode": "mobile"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1200,
+      "backgroundColor": "#0a0d2c",
+      "showSpinner": false
+    }
+  }
+}

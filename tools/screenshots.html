@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screenshot Maker</title>
+<style>
+  :root { --bg: #0a0d2c; --fg: #e8ecff; --muted: #9aa3c7; --accent: #ffd84d; }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg); font-family: ui-rounded, "Segoe UI", sans-serif; }
+  h1 { margin: 0 0 6px; font-size: 26px; }
+  h2 { margin: 26px 0 10px; font-size: 19px; }
+  p { color: var(--muted); margin: 0 0 14px; max-width: 820px; line-height: 1.45; }
+  .grid { display: flex; flex-wrap: wrap; gap: 16px; }
+  figure { margin: 0; }
+  figure img { width: 320px; display: block; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  figcaption { margin-top: 6px; font-size: 13px; color: var(--muted); }
+  a { color: var(--accent); font-weight: 700; }
+  #status { margin-top: 18px; color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>App Store Screenshot Maker</h1>
+<p>Renders real gameplay from each mission at Apple's exact landscape sizes, with a caption on top.
+Click a link to download a file, then upload them in App Store Connect under the iPhone 6.9" and iPad 13" sections.</p>
+<p>Apple takes up to 10 screenshots per device, so the 10 best are rendered. Add <code>?all=1</code> to the address to also render the extra ones.</p>
+<div id="out"></div>
+<div id="status">Rendering…</div>
+<!-- The Space Base wires up its buttons when it is created; these stand in for them here. -->
+<div hidden><button id="btnBaseBack"></button><button id="btnStickers"></button><button id="trayClose"></button><button id="btnCritters"></button>
+  <button id="btnSky"></button><button id="btnEmote"></button><div id="emoteBar"></div>
+  <button id="btnSkyBack"></button><div id="skyPick"></div><b id="skyCount"></b>
+  <button id="btnWorkshop"></button><button id="btnGarden"></button><button id="btnToyBack"></button><div id="toyPick"></div><div id="toyInfo"></div></div>
+
+<script src="../src/util.js"></script>
+<script src="../src/data.js"></script>
+<script src="../src/state.js"></script>
+<script src="../src/native.js"></script>
+<script src="../src/audio.js"></script>
+<script src="../src/draw.js"></script>
+<script src="../src/expert.js"></script>
+<script src="../src/map.js"></script>
+<script src="../src/flight.js"></script>
+<script src="../src/earth.js"></script>
+<script src="../src/mars.js"></script>
+<script src="../src/jupiter.js"></script>
+<script src="../src/saturn.js"></script>
+<script src="../src/venus.js"></script>
+<script src="../src/mercury.js"></script>
+<script src="../src/uranus.js"></script>
+<script src="../src/neptune.js"></script>
+<script src="../src/moon.js"></script>
+<script src="../src/belt.js"></script>
+<script src="../src/sun.js"></script>
+<script src="../src/comet.js"></script>
+<script src="../src/sky.js"></script>
+<script src="../src/iss.js"></script>
+<script src="../src/workshop.js"></script>
+<script src="../src/playground.js"></script>
+<script src="../src/europa.js"></script>
+<script src="../src/galaxy.js"></script>
+<script src="../src/garden.js"></script>
+<script src="../src/titan.js"></script>
+<script src="../src/sky-today.js"></script>
+<script src="../src/journal.js"></script>
+<script src="../src/story.js"></script>
+<script src="../src/quizshow.js"></script>
+<script src="../src/marsbase.js"></script>
+<script src="../src/base.js"></script>
+<script src="../src/critters.js"></script>
+<script src="png.js"></script>
+<script>
+(function (SA) {
+  // The scenes talk to the game's UI; here those calls do nothing, and dialogs never close,
+  // so each scene stays exactly where the setup below puts it.
+  const never = () => new Promise(() => {});
+  SA.ui = { setScene() {}, setInfo() {}, bumpInfo() {}, hint() {}, hideTalk() {}, toast() {}, updateHud() {}, say: never, banner: never,
+    blocking: () => true, talking: () => false, dailyFact() {}, planetCard() {}, toyTop: () => SA.H * 0.11 };
+  SA.voice = { say() {}, stop() {}, speaking: false };
+  SA.go = () => {};
+  SA.celebrate = () => {};
+  SA.finishPlanet = () => {};
+  // A player who has finished most missions, so the map shows stars and Neptune is next.
+  const played = ['earth', 'mars', 'jupiter', 'saturn', 'venus', 'mercury', 'uranus'];
+  SA.state = Object.assign(SA.defaultState(), { introSeen: true, at: 'uranus', done: {}, best: {}, cards: { sun: true },
+    hat: 'helmet', critters: { earth: true, mars: true, jupiter: true, saturn: true, venus: true, moon: true } });
+  played.forEach((id, i) => { SA.state.done[id] = true; SA.state.cards[id] = true; SA.state.best[id] = { m: i % 3 === 1 ? 2 : 3, q: 2 }; });
+  SA.state.done.moon = SA.state.done.belt = true;
+  SA.state.cards.moon = SA.state.cards.belt = true;
+  // The child's own rocket from the Workshop flies on the map, and the greenhouse is growing.
+  SA.state.rocketBuild = { n: 2, t: 2, e: 2, f: 2 };
+  SA.state.garden = { pots: [{ k: 'tomato', n: 4, d: '' }, { k: 'zinnia', n: 3, d: '' }, { k: 'tulip', n: 4, d: '' }], grown: {} };
+  SA.garden = new SA.GardenScene();
+
+  // A shy critter peeking in from the right edge, drawn the way the game draws it.
+  function peek(ctx, id, yk, s) {
+    const c = SA.CRITTER[id], x = SA.W - 44 * s, y = SA.H * yk;
+    const glow = ctx.createRadialGradient(x, y, 10 * s, x, y, 70 * s);
+    glow.addColorStop(0, 'rgba(255,246,200,0.35)');
+    glow.addColorStop(1, 'rgba(255,246,200,0)');
+    ctx.fillStyle = glow;
+    SA.circle(ctx, x, y, 70 * s); ctx.fill();
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-0.35);
+    SA.drawCritter(ctx, 0, 0, s, c, { t: 1.4, look: [-1, -0.2] });
+    ctx.restore();
+    ctx.fillStyle = '#fff6c8';
+    SA.starPath(ctx, x - 44 * s, y - 34 * s, 7 * s, 0.35, 4, 0.3); ctx.fill();
+    SA.starPath(ctx, x - 30 * s, y + 36 * s, 5 * s, 0.35, 4, -0.3); ctx.fill();
+  }
+
+  const run = (scene, seconds, each) => {
+    for (let i = 0; i < seconds * 60; i++) { if (each) each(); scene.update(1 / 60); }
+  };
+
+  const SHOTS = [
+    {
+      key: 'map', caption: 'Explore the Solar System', sub: 'with Cosmo, your alien friend!',
+      make() {
+        const s = new SA.MapScene();
+        s.enter({});
+        run(s, 1.5);
+        s.comet = { x: SA.W * 0.72, y: SA.H * 0.18, vx: 0, vy: 0 };
+        return s;
+      },
+    },
+    {
+      key: 'earth', caption: 'Spin Earth', sub: 'to make day and night',
+      make() {
+        const s = new SA.EarthScene();
+        s.enter();
+        s.round = 0;
+        s.phase = 'play';
+        const m = s.markers[0];
+        s.rot = Math.PI * 0.78 - m.base;
+        s.omega = 0;
+        s.t = 2.2;
+        s.zoneT = 0.3;
+        return s;
+      },
+    },
+    {
+      key: 'mars', caption: 'Drive a rover on Mars', sub: 'and collect rock samples',
+      make() {
+        const s = new SA.MarsScene();
+        s.enter();
+        s.phase = 'drive';
+        run(s, 12, () => {
+          const r = s.rover;
+          const ahead = s.boulders.find(b => b.x - r.x > 0 && b.x - r.x < 150);
+          if (ahead && r.ground) s.onDown();
+          if (r.x > 1960) s.phase = 'pause';
+        });
+        s.phase = 'drive';
+        return s;
+      },
+    },
+    {
+      key: 'jupiter', caption: 'Photograph Jupiter\'s moons', sub: 'like the real Juno spacecraft',
+      make() {
+        const s = new SA.JupiterScene();
+        s.enter();
+        s.phase = 'fly';
+        // Skim low toward the Great Red Spot, with Io and Europa already in the photo strip.
+        s.targets[0].done = s.targets[1].done = true;
+        s.got = 2;
+        s.x = 2700;
+        s.y = s.aimY = s.targetY(s.targets[2]) - 40;
+        s.storms.forEach(st => { st.hit = true; });
+        run(s, 1.6, () => { s.aimY = s.targetY(s.targets[2]); });
+        return s;
+      },
+    },
+    {
+      key: 'saturn', caption: 'Hop across Saturn\'s rings', sub: 'and visit its icy moons',
+      make() {
+        const s = new SA.SaturnScene();
+        s.enter();
+        s.phase = 'hop';
+        run(s, 8, () => {
+          const c = s.cosmo;
+          if (c.lane < 2 && (c.state === 'ride' || c.state === 'hover') && s.willLand()) s.onDown();
+        });
+        return s;
+      },
+    },
+    {
+      key: 'venus', caption: 'See through Venus\'s clouds', sub: 'using radar, like the Magellan spacecraft',
+      make() {
+        const s = new SA.VenusScene();
+        s.enter();
+        s.phase = 'scan';
+        // Uncover the volcano and craters, then show the beam mid-scan.
+        for (const id of ['maat', 'craters']) s.found(s.features.find(f => f.id === id));
+        s.onDown(SA.W * 0.42, SA.H * 0.62);
+        for (let x = 0.42; x < 0.56; x += 0.02) s.onMove(SA.W * x, SA.H * (0.62 + Math.sin(x * 40) * 0.03));
+        run(s, 0.6);
+        s.pings = [];
+        return s;
+      },
+    },
+    {
+      key: 'wardrobe', caption: 'Dress up Cosmo!', sub: 'Earn stars to unlock hats and rocket paint',
+      make() {
+        // A line-up drawn just for this screenshot.
+        const stars = new SA.Starfield(160, 3);
+        return {
+          draw(ctx) {
+            SA.spaceBg(ctx, '#1b1250', '#0b0f2e');
+            stars.draw(ctx, 1, 0);
+            const hats = SA.HATS.filter(h => h.id !== 'none');
+            const cols = hats.length, gap = SA.W / (cols + 1);
+            hats.forEach((h, i) => SA.drawCosmo(ctx, gap * (i + 1), SA.H * 0.38, Math.min(1.5, gap / 112), { t: 1 + i, noBob: true, hat: h.id, wave: i % 2 === 0 }));
+            const paints = SA.PAINTS, pg = SA.W / (paints.length + 1);
+            paints.forEach((p, i) => SA.drawRocket(ctx, pg * (i + 1), SA.H * 0.76, Math.min(1.1, pg / 120), 0.3, { t: 1, paint: p.id, flame: 0.5 }));
+          },
+        };
+      },
+    },
+    {
+      key: 'mercury', caption: 'Race the sunrise on Mercury', sub: 'between scorching days and freezing nights',
+      make() {
+        const s = new SA.MercuryScene();
+        s.enter();
+        s.phase = 'walk';
+        run(s, 7, () => { s.aimX = s.bandX(); });
+        return s;
+      },
+    },
+    {
+      key: 'uranus', caption: 'Slingshot around Uranus', sub: 'use gravity to photograph its moons',
+      make() {
+        const s = new SA.UranusScene();
+        s.enter();
+        s.phase = 'aim';
+        s.moons.forEach((m, i) => { m.got = i < 2; });
+        s.got = 2;
+        s.aiming = true;
+        s.setPull(s.launcher.x - 110, s.launcher.y + 60);
+        return s;
+      },
+    },
+    {
+      key: 'neptune', caption: 'Ride Neptune\'s wild winds', sub: 'the fastest winds in the Solar System',
+      make() {
+        const s = new SA.NeptuneScene();
+        s.enter();
+        s.phase = 'fly';
+        run(s, 3.3, () => {
+          const g = s.gemList.find(gg => !gg.got && gg.x > s.x - 20);
+          if (s.y > (g ? g.fy * SA.H : SA.H * 0.45) + 6) s.onDown(); else s.onUp();
+        });
+        s.holding = true;
+        return s;
+      },
+    },
+    {
+      key: 'base', caption: 'Decorate Cosmo\'s Space Base', sub: 'with stickers, critter friends and space plants',
+      make() {
+        const s = new SA.BaseScene();
+        s.layout();
+        Object.assign(s, { drag: null, react: null, rocketHop: 0, pings: [], waveT: -1, t: 2 });
+        // Today's surprise: Zib the alien visiting in a flying saucer (no seasonal props).
+        Object.assign(s, { surprise: { id: 'ufo' }, month: 0, sp: { t: 8, open: 0, hit: 0, balloons: [], snow: [] } });
+        SA.state.base = [
+          { k: 'b:saturn', x: 0.62, y: 0.2, s: 1.5 }, { k: 'b:earth', x: 0.44, y: 0.3, s: 1 }, { k: 'b:jupiter', x: 0.16, y: 0.24, s: 1.5 },
+          { k: 'b:moon', x: 0.31, y: 0.16, s: 0.7 }, { k: 'd:4', x: 0.78, y: 0.4, s: 1.5 }, { k: 'd:7', x: 0.36, y: 0.46, s: 1 },
+          { k: 's:mars', x: 0.68, y: 0.62, s: 1 }, { k: 'd:1', x: 0.06, y: 0.48, s: 1 }, { k: 'b:mars', x: 0.83, y: 0.16, s: 0.7 },
+        ];
+        // Found critters out for a stroll, one hopping for joy.
+        s.critters = ['earth', 'mars', 'jupiter', 'saturn', 'venus', 'moon'].map((id, i) => ({
+          c: SA.CRITTER[id], x: SA.W * [0.12, 0.42, 0.6, 0.68, 0.76, 0.95][i], dir: i % 2 ? 1 : -1, sp: 0, wait: 1, hop: i === 2 ? 0.5 : 0, joy: i === 2 ? 1 : 0, seed: i * 1.7,
+        }));
+        return s;
+      },
+    },
+    {
+      key: 'critters', caption: 'Find shy space critters', sub: 'one hides in every mission!',
+      make() {
+        // Tilt (who leans over, like Uranus) peeking in, drawn a little bigger so it reads
+        // at App Store thumbnail size, with a finger about to tap it.
+        const s = new SA.UranusScene();
+        s.enter();
+        s.phase = 'aim';
+        s.moons.forEach((m, i) => { m.got = i < 3; });
+        s.got = 3;
+        return {
+          draw(ctx) {
+            s.draw(ctx);
+            peek(ctx, 'uranus', 0.52, 1.7);
+            SA.emoji(ctx, '👆', SA.W - 150, SA.H * 0.52 + 90, 64);
+          },
+        };
+      },
+    },
+    {
+      key: 'belt', caption: 'Sort space rocks', sub: 'with a tractor beam in the asteroid belt',
+      make() {
+        const s = new SA.BeltScene();
+        s.enter();
+        s.phase = 'play';
+        run(s, 4);
+        // A few rocks already in their pods, one of each kind floating, and the metal one on
+        // its way into the METAL pod.
+        s.pod('dark').n = 2;
+        s.pod('stony').n = 1;
+        s.sorted = 3;
+        ['dark', 'stony', 'metal'].forEach((k, i) => { if (s.rocks[i]) s.rocks[i].kind = k; });
+        const p = s.pod('metal'), r = s.rocks[2];
+        s.drag = { r, ox: 0, oy: 0, tx: p.x - p.w * 1.1, ty: p.y - 30 };
+        run(s, 0.6);
+        s.fx.list = [];
+        return s;
+      },
+    },
+    {
+      key: 'sun', caption: 'Watch a star\'s life story', sub: 'from a glowing nebula to a brand-new star',
+      make() {
+        const s = new SA.SunScene();
+        s.enter();
+        // The last chapter: the old white dwarf in its glowing nebula, and a new baby star.
+        s.chapter = 5;
+        s.phase = 'cheer';
+        s.lit = true;
+        s.grow = 1;
+        s.puffs = 3;
+        s.dwarf = 1;
+        s.planetFade = 0;
+        s.shells = [1, 2, 3].map(n => ({ t: 3, n }));
+        s.pan = 1;
+        s.swirl2 = 0.35;
+        s.lit2 = true;
+        s.t = 4;
+        return s;
+      },
+    },
+    {
+      key: 'comet', caption: 'Ride a comet around the Sun', sub: 'and learn why its tail points away',
+      make() {
+        const s = new SA.CometScene();
+        s.enter();
+        // Swinging past the Sun with a long glowing tail and a dusty trail behind.
+        s.phase = 'travel';
+        s.stop = 3;
+        s.M = Math.PI * 1.7;
+        run(s, 8, () => { if (s.M > Math.PI * 1.9) s.phase = 'cheer'; });
+        s.fx.list = [];
+        return s;
+      },
+    },
+    {
+      key: 'sky', caption: 'Join up the stars', sub: 'and hear the stories of real constellations',
+      make() {
+        const s = new SA.SkyScene();
+        s.layout();
+        s.choose('orion', true);
+        // Orion half joined up: the next star pulses with its number, and a finger points at it.
+        const c = s.cur;
+        Object.assign(s, { done: false, lit: 5, picA: 0, t: 2.3, phase: 'play' });
+        s.drawn = c.lines.filter(l => Math.max(l[0], l[1]) < 5).map(l => ({ a: l[0], b: l[1], t: 1 }));
+        s.shooting.list.push({ x: SA.W * 0.8, y: SA.H * 0.2, vx: -700, vy: 400, life: 0.2, max: 0.8 });
+        return { draw(ctx) { const e = SA.state.easy; SA.state.easy = true; s.draw(ctx); SA.state.easy = e; } };
+      },
+    },
+    {
+      key: 'rocket', caption: 'Build your own rocket', sub: 'and see how high it can fly!',
+      make() {
+        // The parts picker, with the best rocket just lifting off the pad beside it.
+        const s = new SA.WorkshopScene();
+        s.layout();
+        s.build = { n: 2, t: 2, e: 2, f: 2 };
+        s.sim = SA.rocketSim(s.build, false);
+        Object.assign(s, { phase: 'fly', pops: {}, shake: 0, hop: 0, t: 2 });
+        const dur = 2.6 + 5 * 0.75;
+        s.fl = { stage: 'up', t: dur * 0.17, L: 0, maxL: 6, upTo: 5, dur, sway: 0, ang: 0, fast: false };
+        run(s, 0.25, () => { if (Math.random() < 0.5) s.smoke(0.8); });
+        return { draw(ctx) { s.draw(ctx); s.drawPicker(ctx, 2); } };
+      },
+    },
+    {
+      key: 'iss', caption: 'Visit the Space Station', sub: 'where snacks float and the Sun rises 16 times a day',
+      make() {
+        // The kitchen: a juice ball drifting toward hungry Cosmo, who opens wide.
+        const s = new SA.IssScene();
+        s.enter();
+        s.startRoom(0);
+        run(s, 1.2);
+        const juice = s.items.find(o => o.kind === 'juice'), m = s.mouth();
+        Object.assign(juice, { x: m.x - 150, y: m.y - 30, vx: 0, vy: 0 });
+        s.updateKitchen(1 / 60);
+        return s;
+      },
+    },
+    {
+      key: 'playground', caption: 'Crash space rocks into the Moon', sub: 'and fling planets into orbit',
+      make() {
+        // The Space Playground's crater mode: a cratered Moon, one rock streaking in, one being aimed.
+        const s = new SA.PlaygroundScene();
+        s.layout();
+        s.mode = 'craters';
+        const m = s.moon, W = SA.W;
+        [[-0.35, 40, false], [-0.05, 62, true], [0.22, 30, false], [0.4, 48, false], [-0.2, 24, false], [0.08, 20, false], [0.3, 70, true]].forEach(([dx, size, rays], i) => {
+          const a = -Math.PI / 2 + dx;
+          s.craters.push([a, size, rays, 10 + i]);
+          s.drawCrater(a, size, rays, 10 + i);
+        });
+        s.craterCount = s.craters.length;
+        s.rocks = [{ x: W * 0.62, y: SA.H * 0.3, vx: 700, vy: 900, r: 14, seed: 4, rot: 1 }];
+        s.aim = { x0: W * 0.2, y0: SA.H * 0.22, x: W * 0.3, y: SA.H * 0.34 };
+        s.t = 2;
+        return s;
+      },
+    },
+    {
+      key: 'galaxy', caption: 'Fly out of our galaxy', sub: 'and visit the black hole in its middle',
+      make() {
+        // The Milky Way from far above, with the "You are here" pin and a star nursery found,
+        // and a small window showing the black hole at its middle.
+        const s = new SA.GalaxyScene();
+        s.enter();
+        Object.assign(s, { view: 'galaxy', phase: 'tour', z: 2, seenN: 2, t: 6 });
+        s.c = { x: SA.W * 0.4, y: SA.H * 0.48 };   // room on the right for the black hole window
+        s.seen = { sun: 1, nursery: 1 };
+        const hole = new SA.GalaxyScene();
+        hole.enter();
+        hole.next = 'hole';
+        hole.onFaded();
+        hole.phase = 'play';
+        const c = hole.c;
+        for (const [d, a] of [[2.6, 0.4], [4.4, 2.6]]) {
+          const r = hole.R * d, sp = Math.sqrt(hole.g / r);
+          hole.addStar(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, Math.sin(a) * sp, -Math.cos(a) * sp);
+        }
+        run(hole, 2.5);
+        return {
+          draw(ctx) {
+            s.draw(ctx);
+            // Inset: the black hole, in a round window at the right.
+            const W = SA.W, H = SA.H, r = Math.min(H * 0.27, W * 0.17), x = W - r - 28, y = H * 0.55;
+            ctx.save();
+            SA.circle(ctx, x, y, r); ctx.clip();
+            ctx.translate(x - c.x * 0.62, y - c.y * 0.62);
+            ctx.scale(0.62, 0.62);
+            hole.draw(ctx);
+            ctx.restore();
+            ctx.strokeStyle = 'rgba(255,214,150,0.9)'; ctx.lineWidth = 6;
+            SA.circle(ctx, x, y, r); ctx.stroke();
+            SA.pill(ctx, '🕳️ A giant black hole!', x, y + r + 6, 22, { color: '#fff3c4', edge: 'rgba(255,190,110,0.9)' });
+          },
+        };
+      },
+    },
+    {
+      key: 'europa', caption: 'Dive under Europa\'s ice', sub: 'and explore a hidden ocean',
+      make() {
+        // In the dark ocean with the searchlight on: three secrets found, glowing.
+        const s = new SA.EuropaScene();
+        s.enter();
+        Object.assign(s, { view: 'ocean', phase: 'play', foundN: 4, quietT: 0 });
+        s.found = { plume: 1, salt: 1, warm: 1, vents: 1 };
+        Object.assign(s.sub, { x: SA.W * 0.53, y: SA.H * 0.64, dir: -1, tx: null });
+        run(s, 1);
+        s.fx.list = [];
+        // Glimmer, the critter who hides here, peeking in from the side.
+        return { draw(ctx) { s.draw(ctx); peek(ctx, 'europa', 0.4, 1.5); } };
+      },
+    },
+    {
+      key: 'titan', caption: 'Fly a drone on Titan', sub: 'through orange haze and slow methane rain',
+      make() {
+        // Flying through the rain cloud, with two science spots already found.
+        const s = new SA.TitanScene();
+        s.enter();
+        Object.assign(s, { phase: 'rain', chute: 0, foundN: 2, caught: 1 });
+        s.found = { dunes: 1, rain: 1 };
+        Object.assign(s.d, { x: s.L * 0.345, y: SA.H * 0.46 });
+        run(s, 3.5, () => { s.d.sx = SA.W * 0.47; s.d.sy = SA.H * 0.46; });
+        s.fx.list = [];
+        return { draw(ctx) { s.draw(ctx); peek(ctx, 'titan', 0.42, 1.5); } };
+      },
+    },
+    {
+      key: 'journal', caption: 'Keep a Space Journal', sub: 'draw, stamp, and see tonight\'s real Moon',
+      make() {
+        // A Moon-diary page: a crescent drawn in crayon, a few stars, and stamps of finds.
+        const s = new SA.JournalScene();
+        s.hudBottom = () => SA.H * 0.11;
+        s.saveNow = s.saveSoon = () => {};   // never touch the real journal
+        s.data = { pages: [{ topic: 'moon', day: SA.dayKey(), s: [], st: [] }] };
+        s.pi = 0; s.undo = []; s.layout();
+        const p = s.paper, at = (u, v) => [p.x + p.w * u, p.y + p.h * v];
+        const line = (tool, pts) => { s.tool = tool; s.onDown(...at(...pts[0])); for (const q of pts.slice(1)) s.onMove(...at(...q)); s.onUp(); };
+        const arc = (cx, cy, r, a0, a1) => { const out = []; for (let a = a0; a <= a1; a += 0.12) out.push([cx + Math.cos(a) * r * 0.64, cy + Math.sin(a) * r]); return out; };
+        line(3, arc(0.5, 0.58, 0.26, -1.5, 1.6));
+        line(3, arc(0.47, 0.58, 0.2, -1.2, 1.3));
+        for (const [u, v] of [[0.2, 0.3], [0.8, 0.35], [0.72, 0.75], [0.28, 0.8]]) line(5, [[u - 0.02, v], [u + 0.02, v], [u, v], [u, v - 0.03], [u, v + 0.03]]);
+        line(6, [[0.08, 0.86], [0.3, 0.82], [0.5, 0.86], [0.7, 0.81], [0.92, 0.85]]);
+        s.tool = 'stamp';
+        for (const [k, u, v] of [['c:titan', 0.15, 0.55], ['b:saturn', 0.84, 0.58], ['i:rocket', 0.86, 0.25], ['i:star', 0.62, 0.3]]) { s.stamp = k; s.onDown(...at(u, v)); s.onUp(); }
+        s.tool = 6;
+        s.fx.list = [];
+        for (const st of s.data.pages[0].st) st.pop = 0;
+        return s;
+      },
+    },
+    {
+      key: 'show', caption: 'Star in a space quiz show!', sub: 'spin the planet wheel and hit the buzzers',
+      make() {
+        // Mission Control: the wheel has landed on Saturn, the question is up, and a finger is
+        // about to hit the right buzzer while the critter audience watches.
+        const s = new SA.QuizShowScene();
+        s.enter();
+        s.segs = ['saturn', 'mars', 'jupiter', 'earth', 'venus', 'neptune', 'moon', 'uranus'];
+        s.wheelPic = null;
+        s.layout();
+        const n = s.segs.length;
+        s.rot = -Math.PI / 2 - 0.5 * (Math.PI * 2 / n);
+        const q = SA.BODY.saturn.quiz[0];
+        s.q = { q: q.q, explain: q.explain, opts: [q.options[1], q.options[0], q.options[2]], answer: 1 };
+        Object.assign(s, { phase: 'ask', planet: 'saturn', round: 3, points: 250, buzzIn: 1, wrong: [], cheer: 0, t: 1.2 });
+        s.wheelPic = null;   // baked again at the screenshot's own resolution when drawn
+        return {
+          draw(ctx) {
+            s.draw(ctx);
+            const b = s.buzzers[1];
+            SA.emoji(ctx, '👆', b.x + b.w * 0.36, b.y + b.h * 0.62, 66);
+          },
+        };
+      },
+    },
+    {
+      key: 'marsbase', caption: 'Build a base on Mars', sub: 'and learn what astronauts need to live there',
+      make() {
+        // A finished Mars Base with the astronauts strolling between the parts.
+        SA.state.marsBase = { p: ['hab', 'green', 'drill', 'oxy', 'lab', 'dish', 'solar', 'rover', null, 'pad'], done: true };
+        SA.state.marsSeen = true;
+        const s = new SA.MarsBaseScene();
+        s.enter();
+        s.astros[0].x = SA.W * 0.37; s.astros[1].x = SA.W * 0.55;
+        s.astros.forEach(a => { a.wait = 9; });
+        run(s, 0.5);
+        s.astros[1].hi = 0.6;
+        s.fx.list = [];
+        return s;
+      },
+    },
+  ];
+  // Apple shows up to 10 per device: these, in this order. ?all=1 renders the rest too.
+  const ORDER = ['map', 'show', 'titan', 'galaxy', 'europa', 'marsbase', 'journal', 'earth', 'rocket', 'base'];
+  const ALL = new URLSearchParams(location.search).get('all') === '1';
+  const PICKED = ORDER.map(k => SHOTS.find(s => s.key === k)).concat(ALL ? SHOTS.filter(s => ORDER.indexOf(s.key) < 0) : []);
+
+  const DEVICES = [
+    { key: 'iphone', label: 'iPhone 6.9"', w: 2868, h: 1320 },
+    { key: 'ipad', label: 'iPad 13"', w: 2752, h: 2064 },
+  ];
+
+  // Branded frame: space background, caption on top, the game in a rounded window below.
+  function compose(dev, shot, scene) {
+    const out = document.createElement('canvas');
+    out.width = dev.w; out.height = dev.h;
+    const ctx = out.getContext('2d');
+    const W = dev.w, H = dev.h;
+    const bg = ctx.createRadialGradient(W * 0.5, H * 0.1, 0, W * 0.5, H * 0.4, W * 0.8);
+    bg.addColorStop(0, '#3b2a92');
+    bg.addColorStop(0.6, '#15114a');
+    bg.addColorStop(1, '#070920');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    const rnd = SA.seeded(dev.w + shot.key.length);
+    for (let i = 0; i < 220; i++) {
+      ctx.globalAlpha = 0.3 + rnd() * 0.7;
+      ctx.fillStyle = '#fff';
+      SA.circle(ctx, rnd() * W, rnd() * H, 1 + rnd() * 2.5);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Caption.
+    const capH = H * 0.2;
+    const fs = Math.round(capH * 0.36);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '800 ' + fs + 'px ' + SA.FONT;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = fs * 0.2;
+    ctx.fillText(shot.caption, W / 2, capH * 0.45);
+    ctx.font = '700 ' + Math.round(fs * 0.55) + 'px ' + SA.FONT;
+    ctx.fillStyle = '#ffe066';
+    ctx.fillText(shot.sub, W / 2, capH * 0.86);
+    ctx.shadowBlur = 0;
+
+    // The game, rendered at the device's shape.
+    const fh = H * 0.74, fw = fh * (W / H);
+    const fx = (W - fw) / 2, fy = H - fh - H * 0.035;
+    const game = document.createElement('canvas');
+    game.width = Math.round(fw); game.height = Math.round(fh);
+    const g = game.getContext('2d');
+    const k = game.width / SA.W;
+    SA.pixelScale = k;   // baked pictures (the base's planet stickers) render sharp at this size
+    g.setTransform(k, 0, 0, k, 0, 0);
+    scene.draw(g);
+
+    const rad = fh * 0.05;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = H * 0.03;
+    ctx.fillStyle = '#000';
+    SA.rrect(ctx, fx, fy, fw, fh, rad); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    SA.rrect(ctx, fx, fy, fw, fh, rad);
+    ctx.clip();
+    ctx.drawImage(game, fx, fy, fw, fh);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = Math.max(3, H * 0.004);
+    SA.rrect(ctx, fx, fy, fw, fh, rad); ctx.stroke();
+
+    // Cosmo peeking in at the corner of the caption.
+    SA.drawCosmo(ctx, W * 0.075, capH * 0.68, capH / 160, { t: 1, wave: true, noBob: true });
+    return out;
+  }
+
+  const saveTo = new URLSearchParams(location.search).get('save');
+  const outEl = document.getElementById('out');
+  const status = document.getElementById('status');
+
+  (async () => {
+    let saved = 0;
+    for (const dev of DEVICES) {
+      const h2 = document.createElement('h2');
+      h2.textContent = dev.label + ' · ' + dev.w + ' × ' + dev.h;
+      outEl.appendChild(h2);
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      outEl.appendChild(grid);
+      // Same logical height as the game; width follows the device shape.
+      SA.H = 720;
+      SA.W = Math.round(SA.H * dev.w / dev.h);
+      for (let i = 0; i < PICKED.length; i++) {
+        const shot = PICKED[i];
+        const scene = shot.make();
+        const canvas = compose(dev, shot, scene);
+        const blob = await window.encodeRGBPNG(canvas);
+        const name = dev.key + '-' + String(i + 1).padStart(2, '0') + '-' + shot.key + '.png';
+        const fig = document.createElement('figure');
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = img.src;
+        link.download = name;
+        link.textContent = name;
+        const cap = document.createElement('figcaption');
+        cap.appendChild(link);
+        fig.append(img, cap);
+        grid.appendChild(fig);
+        if (saveTo) {
+          const r = await fetch(saveTo + '/' + name, { method: 'POST', body: blob });
+          if (r.ok) saved++;
+        }
+      }
+    }
+    status.textContent = saveTo ? 'Done: saved ' + saved + ' files.' : 'Done. Click each file name to download it.';
+    window.shotsDone = true;
+  })();
+})(window.SA);
+</script>
+</body>
+</html>
